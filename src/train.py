@@ -32,6 +32,9 @@ def train(
     df_train = pd.read_csv(data_path)
     df_eval  = pd.read_csv(eval_path)
 
+    # Dung sqlite local theo huong dan README neu chua duoc set truoc do.
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"))
+
     # Tach dac trung (X) va nhan (y)
     X_train, y_train = df_train.drop(columns=["target"]), df_train["target"]
     X_eval, y_eval   = df_eval.drop(columns=["target"]), df_eval["target"]
