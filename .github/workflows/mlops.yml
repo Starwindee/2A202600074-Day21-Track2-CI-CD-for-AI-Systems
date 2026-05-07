@@ -1,5 +1,8 @@
 name: MLOps Pipeline
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [master, main]
@@ -43,6 +46,9 @@ jobs:
     name: Train
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     outputs:
       accuracy: ${{ steps.read_metrics.outputs.accuracy }}
 
@@ -53,18 +59,37 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Authenticate to Cloud Storage
+      - name: Validate bucket secret
         run: |
-          echo '${{ secrets.CLOUD_CREDENTIALS }}' > /tmp/sa-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json" >> $GITHUB_ENV
+          if [ -z "${{ secrets.CLOUD_BUCKET }}" ]; then
+            echo "CLOUD_BUCKET is empty. Please set GitHub secret CLOUD_BUCKET."
+            exit 1
+          fi
+
+      - name: Validate WIF secrets
+        run: |
+          if [ -z "${{ secrets.GCP_WIF_PROVIDER }}" ]; then
+            echo "GCP_WIF_PROVIDER is empty."
+            exit 1
+          fi
+          if [ -z "${{ secrets.GCP_SERVICE_ACCOUNT }}" ]; then
+            echo "GCP_SERVICE_ACCOUNT is empty."
+            exit 1
+          fi
 
       - name: Configure DVC remote
         run: |
           dvc remote add -f -d myremote gs://${{ secrets.CLOUD_BUCKET }}/dvc
-          dvc remote modify myremote credentialpath /tmp/sa-key.json
 
       - name: Pull data with DVC
         run: dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc
