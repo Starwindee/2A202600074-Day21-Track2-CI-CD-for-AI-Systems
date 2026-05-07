@@ -3,6 +3,9 @@ name: MLOps Pipeline
 permissions:
   contents: read
 
+env:
+  GCP_PROJECT_ID: project-083ace37-373b-4eeb-976
+
 on:
   push:
     branches: [master, main]
@@ -13,35 +16,19 @@ on:
   workflow_dispatch:
 
 jobs:
-
-  # ---------------------------------------------------------------------------
-  # JOB 1 - UNIT TEST
-  # Chay unit tests tren du lieu ao (khong can ket noi cloud storage).
-  # Neu co bat ky test nao that bai, pipeline dung lai o day va khong tien hanh
-  # huan luyen hay trien khai.
-  # ---------------------------------------------------------------------------
   test:
     name: Unit Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
-
+          python-version: '3.10'
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Run unit tests
         run: pytest tests/ -v
 
-
-  # ---------------------------------------------------------------------------
-  # JOB 2 - TRAIN
-  # Xac thuc cloud storage, pull du lieu bang DVC, huan luyen mo hinh, upload artifact.
-  # Chi chay khi Job 1 (Unit Test) hoan thanh thanh cong.
-  # ---------------------------------------------------------------------------
   train:
     name: Train
     needs: test
@@ -51,53 +38,36 @@ jobs:
       id-token: write
     outputs:
       accuracy: ${{ steps.read_metrics.outputs.accuracy }}
-
     steps:
       - uses: actions/checkout@v5
-
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
       - name: Authenticate to GCP (WIF)
         id: gcp_auth
-<<<<<<< HEAD
         uses: google-github-actions/auth@v3
-=======
-        uses: google-github-actions/auth@v2
->>>>>>> d10bd968b683cfe407ba31a3f076f4bc0f5a60a2
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
           create_credentials_file: true
 
       - name: Export ADC for DVC/GCS clients
-        run: |
-          echo "GOOGLE_APPLICATION_CREDENTIALS=${{ steps.gcp_auth.outputs.credentials_file_path }}" >> $GITHUB_ENV
+        run: echo "GOOGLE_APPLICATION_CREDENTIALS=${{ steps.gcp_auth.outputs.credentials_file_path }}" >> $GITHUB_ENV
 
-<<<<<<< HEAD
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
 
-=======
->>>>>>> d10bd968b683cfe407ba31a3f076f4bc0f5a60a2
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Validate bucket secret
+      - name: Validate required secrets
         run: |
           if [ -z "${{ secrets.CLOUD_BUCKET }}" ]; then
-            echo "CLOUD_BUCKET is empty. Please set GitHub secret CLOUD_BUCKET."
-            exit 1
-          fi
-
-      - name: Validate WIF secrets
-        run: |
-          if [ -z "${{ secrets.GCP_PROJECT_ID }}" ]; then
-            echo "GCP_PROJECT_ID is empty."
+            echo "CLOUD_BUCKET is empty."
             exit 1
           fi
           if [ -z "${{ secrets.GCP_WIF_PROVIDER }}" ]; then
@@ -117,8 +87,7 @@ jobs:
           gcloud storage ls "gs://${{ secrets.CLOUD_BUCKET }}/dvc" || true
 
       - name: Configure DVC remote
-        run: |
-          dvc remote add -f -d myremote gs://${{ secrets.CLOUD_BUCKET }}/dvc
+        run: dvc remote add -f -d myremote gs://${{ secrets.CLOUD_BUCKET }}/dvc
 
       - name: Pull data with DVC
         run: dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc
@@ -133,20 +102,20 @@ jobs:
           echo "accuracy=$ACC" >> $GITHUB_OUTPUT
 
       - name: Upload model to Cloud Storage
+        env:
+          CLOUD_BUCKET: ${{ secrets.CLOUD_BUCKET }}
         run: |
           python - <<'EOF'
           import os
           from google.cloud import storage
 
-          bucket_name = os.environ["CLOUD_BUCKET"]
+          bucket_name = os.environ['CLOUD_BUCKET']
           client = storage.Client()
           bucket = client.bucket(bucket_name)
-          blob = bucket.blob("models/latest/model.pkl")
-          blob.upload_from_filename("models/model.pkl")
+          blob = bucket.blob('models/latest/model.pkl')
+          blob.upload_from_filename('models/model.pkl')
           print(f"Uploaded models/model.pkl to gs://{bucket_name}/models/latest/model.pkl")
           EOF
-        env:
-          CLOUD_BUCKET: ${{ secrets.CLOUD_BUCKET }}
 
       - name: Save metrics as artifact
         uses: actions/upload-artifact@v4
@@ -154,19 +123,11 @@ jobs:
           name: metrics
           path: outputs/metrics.json
 
-
-  # ---------------------------------------------------------------------------
-  # JOB 3 - EVAL
-  # Kiem tra nguong chat luong (accuracy >= 0.70).
-  # Pipeline dung lai o day neu mo hinh chua dat yeu cau.
-  # Chi chay khi Job 2 (Train) hoan thanh thanh cong.
-  # ---------------------------------------------------------------------------
   eval:
     name: Eval
     needs: train
     runs-on: ubuntu-latest
     steps:
-
       - name: Check eval gate
         run: |
           python - <<'EOF'
@@ -176,18 +137,11 @@ jobs:
           print(f"PASSED: accuracy {acc:.4f} >= 0.70. Dang trien khai model.")
           EOF
 
-
-  # ---------------------------------------------------------------------------
-  # JOB 4 - DEPLOY
-  # Trien khai len VM qua SSH.
-  # Chi chay khi Job 3 (Eval) hoan thanh thanh cong.
-  # ---------------------------------------------------------------------------
   deploy:
     name: Deploy
     needs: eval
     runs-on: ubuntu-latest
     steps:
-
       - name: SSH deploy to VM
         uses: appleboy/ssh-action@v1.0.3
         with:
