@@ -26,6 +26,10 @@ jobs:
           python-version: '3.10'
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Upgrade DVC GCS stack for WIF compatibility
+        run: |
+          pip install --upgrade "dvc[gs]>=3.58.0" "gcsfs>=2024.6.1" "google-auth>=2.35.0"
       - name: Run unit tests
         run: pytest tests/ -v
 
